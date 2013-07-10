@@ -86,28 +86,28 @@ public class SerialPortMain {
 			                String rtspRequest =   "SETUP rtsp://example.com/ecg.ps RTSP/1.0\r\nCSeq: 302\r\nTransport: RTP/AVP;unicast;client_port=4588-4589";
 	
 	        				//byte[] blah = {'a', 'b', 'c', 'd', 'e'};
-	                		f.send(rtspRequest.getBytes(), type_rtsp);
+	                		f.sendReliable(rtspRequest.getBytes(), type_rtsp);
 				    }
 					else
 					if(s.equals("P"))
 				    {
 	        				String rtspRequest = "PLAY rtsp://example.com/ecg.ps RTSP/1.0\r\nCSeq: 833\r\nSession: 123\r\nRange: npt=10-15";   
 	
-	                		f.send(rtspRequest.getBytes(), type_rtsp);
+	                		f.sendReliable(rtspRequest.getBytes(), type_rtsp);
 				    }
 					else
 					if(s.equals("E"))
 				    {
 	        				String rtspRequest = "PAUSE rtsp://example.com/ecg.ps RTSP/1.0\r\nCSeq: 835\r\nSession: 123\r\n";   
 	
-	                		f.send(rtspRequest.getBytes(), type_rtsp);
+	                		f.sendReliable(rtspRequest.getBytes(), type_rtsp);
 				    }
 					else
 					if(s.equals("D"))
 				    {
 	        				String rtspRequest = "DESCRIBE rtsp://example.com/ecg.ps RTSP/1.0\r\nCSeq: 312\r\nAccept: application/sdp, application/rtsl, application/mheg";   
 	
-	                		f.send(rtspRequest.getBytes(), type_rtsp);
+	                		f.sendReliable(rtspRequest.getBytes(), type_rtsp);
 				    }
 					else
 					if(s.equals("T"))
@@ -115,7 +115,7 @@ public class SerialPortMain {
 				           
 	        				String rtspRequest = "TEARDOWN rtsp://example.com/ecg.ps RTSP/1.0\r\nCSeq: 892\r\nSession: 123";   
 	
-	                		f.send(rtspRequest.getBytes(), type_rtsp);
+	                		f.sendReliable(rtspRequest.getBytes(), type_rtsp);
 				    }
 				}
 		        catch ( Exception e )

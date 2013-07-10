@@ -18,7 +18,9 @@ import java.io.OutputStream;
 import java.lang.reflect.Array;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 
 /*	
 Framing.cpp - Arduino Due data framing using flags, unsigned char stuffing, and CRC 16
@@ -47,7 +49,7 @@ public class Framing implements Runnable {
 	final int NONE 			= 0;
 	final int NORMAL 		= 1;
 	final int VERBOSE 		= 2;
-	int debugLevel 	= VERBOSE;
+	int debugLevel 	= NORMAL;
 
 	final byte type_rtp 	= '1';
 	final byte type_rtsp 	= '2';
@@ -57,7 +59,10 @@ public class Framing implements Runnable {
 	private byte[] buffer = new byte[100];
 	private int iCurrentPosition = 0;
 
-	private int iSendSeq = 500;
+	private int iSendSeq 			= 0;
+	private boolean sendQueueReady 	= true;
+	long startTime 					= 0;
+	long elapsedTime 				= 0;
 
 	//Define static constants
 	private static byte m_STX=0x02;
@@ -74,7 +79,11 @@ public class Framing implements Runnable {
 	final int RTSPState_Init        = 3;
 	final int RTSPState_Playing     = 4;
 
+	final int FRAMING_WAIT_TIME		= 2000;
+	
 	String RTSP_States[] = {"BLANK", "READY", "RECORDING", "INIT", "PLAYING"};
+	
+	ArrayList<Frame> sendQueue = new ArrayList<Frame>();
 	
 	//Constructor for Framing
 	public Framing(String portName) {
@@ -84,6 +93,9 @@ public class Framing implements Runnable {
 	public void run()
 	// The run method looks for incoming data in its input buffer and decodes it
 	{
+
+
+		
 
         CommPortIdentifier portIdentifier;
 		try {
@@ -118,8 +130,8 @@ public class Framing implements Runnable {
 	        Boolean keepRunning = true;
 	        BufferedReader br = new BufferedReader(new InputStreamReader(in, "UTF8"));
 
-			//byte[] tempdata = new byte[1000];
-			//int tempcount = 0;
+			byte[] tempdata = new byte[1000];
+			int tempcount = 0;
 	        while(true)
 			{
 	        	
@@ -130,7 +142,40 @@ public class Framing implements Runnable {
 				int input;
 				char c;
 	
+				try {
+					// First send any data in the sendqueue
+					if(sendQueue.get(0) != null)
+					{
+						if((sendQueue.get(0).getSendCount()<3)&&(elapsedTime >= FRAMING_WAIT_TIME) )
+						{
+							System.out.println("Sending message with sequence number " + Integer.toString(sendQueue.get(0).getSequenceNumber()));
+
+							out.write(sendQueue.get(0).getFramedData());
+							sendQueue.get(0).increaseSendCount();
+
+							startTime = System.currentTimeMillis();
+							elapsedTime = 0;
+						}
+						else if((sendQueue.get(0).getSendCount()<3)&&(elapsedTime < FRAMING_WAIT_TIME))
+						{
+							//perform db poll/check
+							elapsedTime = (new Date()).getTime() - startTime;
+						}
+					    else
+						{
+							System.out.println("Removing message with sequence number " + Integer.toString(sendQueue.get(0).getSequenceNumber()));
+							sendQueue.remove(0);
+						}
+					}
+					} catch (IOException e) {
+						// TODO Auto-generated catch block
+						System.out.println("Failed to send frame");
+					}catch (IndexOutOfBoundsException e) {
+						// TODO Auto-generated catch block
+						//System.out.println("Nothing in send queue");
+					}				
 				
+				// Now check the input buffer
 				try
 				// 1stCharTry
 				{
@@ -140,7 +185,7 @@ public class Framing implements Runnable {
 	                	//tempcount++;
 	                	//System.out.println("\nTempdata now: " + BytePrinter.printBytes(tempdata, tempcount));
 	                	//System.out.println("\nTempdata now: " + BytePrinter.printAscii(tempdata, tempcount));
-	                	//System.out.println("Tempcount now: " + Integer.toString(tempcount));
+	                	//System.out.println("Tempcount now: " + Integer.toString(tempcount));/*
 	                	
 						newbyte = (byte) input;
 
@@ -149,7 +194,7 @@ public class Framing implements Runnable {
 	                	//System.out.println("\nTempdata now: " + BytePrinter.printBytes(tempdata, tempcount));
 	                	//System.out.println("\nTempdata now: " + BytePrinter.printAscii(tempdata, tempcount));
 						
-						if(debugLevel>=NORMAL) System.out.println("\nReceived possible first byte: " + BytePrinter.printByte(newbyte));
+						//if(debugLevel>=NORMAL) System.out.println("\nReceived possible first byte: " + BytePrinter.printByte(newbyte));
 		
 						//Timer t = new Timer(1000);
 						//t.start();
@@ -175,7 +220,7 @@ public class Framing implements Runnable {
 	    	                	oldbyte = newbyte;
 								newbyte = (byte) input;
 		
-								if(debugLevel>=NORMAL) System.out.println("Received possible second byte: " + BytePrinter.printByte(newbyte));
+								//if(debugLevel>=NORMAL) System.out.println("Received possible second byte: " + BytePrinter.printByte(newbyte));
 		
 								if((oldbyte==m_DLE) && (newbyte==m_STX)) 
 								{
@@ -269,11 +314,11 @@ public class Framing implements Runnable {
 		                			//System.out.println("Calculated CRC: " +  Short.toString(calculatedCRC) );
 
 									if(calculatedCRC==receivedCrc) {
-										if(debugLevel>=NORMAL) System.out.println("Checksum OK");
+										if(debugLevel>=NORMAL) System.out.println("\nChecksum OK");
 
 			                			if(debugLevel>=NORMAL) System.out.println("Received:");
-			                			if(debugLevel>=NORMAL) System.out.println("Unframed data: " + BytePrinter.printBytes(unframedData, data_index-1));
-			                			if(debugLevel>=NORMAL) System.out.println("(ascii)      :  " + BytePrinter.printAscii(unframedData, data_index-1));
+			                			if(debugLevel>=NORMAL) System.out.println("Unframed data: " + BytePrinter.printBytes(unframedData, data_index-3));
+			                			if(debugLevel>=NORMAL) System.out.println("(ascii)      :  " + BytePrinter.printAscii(unframedData, data_index-3));
 			                			switch(unframedData[2])
 			                			{
 			                				case type_rtp:
@@ -291,9 +336,24 @@ public class Framing implements Runnable {
 			                					//int sequenceNumber = unframedData[0] << 8 + unframedData[1];
 			                					int sequenceNumber = (unframedData[3]<<8) + (unframedData[4] & 0xff);
 		
-			    	                			//if(debugLevel>=NORMAL) System.out.println("Ack received for frame " + (int)(unframedData[0]<<8 + unframedData[1]));
+			                					//if(debugLevel>=NORMAL) System.out.println("Ack received for frame " + (int)(unframedData[0]<<8 + unframedData[1]));
 			    	                			if(debugLevel>=NORMAL) System.out.println("Ack received for frame " + Integer.toString(sequenceNumber) );
 			    	                			if(debugLevel>=NORMAL) System.out.println("Current state is: " + RTSP_States[((int) unframedData[5])]);
+
+			    	                			try{
+			    	                				if(sendQueue.get(0).getSequenceNumber()==sequenceNumber)
+			    	                				{
+			    	                					sendQueue.remove(0);
+			    	                					if(debugLevel>=NORMAL) System.out.println("Removing frame " + Integer.toString(sequenceNumber) );
+			    	                				}
+			    	                				else
+			    	                					if(debugLevel>=NORMAL) System.out.println("Frame at start of queue has a different sequence number: " + Integer.toString(sendQueue.get(0).getSequenceNumber()) );
+			    	                			}
+			    	                			catch (ArrayIndexOutOfBoundsException e)
+			    	                			{
+		    	                					if(debugLevel>=NORMAL) System.out.println("No frame at start of queue");
+			    	                			}
+			                					
 			    	                			break;
 			                				}
 			                				case type_message:
@@ -311,15 +371,14 @@ public class Framing implements Runnable {
 										if(debugLevel>=NORMAL) System.out.println("Checksum FALSE");
 
 			                			if(debugLevel>=NORMAL) System.out.println("Received:");
-			                			if(debugLevel>=NORMAL) System.out.println("Unframed data: " + BytePrinter.printBytes(unframedData, data_index-1));
-			                			if(debugLevel>=NORMAL) System.out.println("(ascii):     : " + BytePrinter.printAscii(unframedData, data_index-1));
-			                			
+			                			if(debugLevel>=NORMAL) System.out.println("Unframed data: " + BytePrinter.printBytes(unframedData, data_index-3));
+			                			if(debugLevel>=NORMAL) System.out.println("(ascii):     : " + BytePrinter.printAscii(unframedData, data_index-3));
 									}
 									
 								}
 								else
 								{
-									if(debugLevel>=NORMAL) System.out.println("Bad start to string");
+									if(debugLevel>NORMAL) System.out.println("Bad start to string");
 									//break; // break out of the while loop for the 2nd start character
 								}
 							}
@@ -340,7 +399,7 @@ public class Framing implements Runnable {
 								e1.printStackTrace();
 							}
 						}
-						
+						// tempdata */
 					}
 				}
 				catch (IOException e)
@@ -417,14 +476,32 @@ public class Framing implements Runnable {
 		return iCurrentPosition;
 	}
 
+	/*
+	public void sendUnreliable(byte[] data, byte type) throws IOException
+	{
+		//byte[] bytes = getFramedData(data, type);
+		//System.out.println(Integer.toString(bytes.length));
 
-	public void send(byte[] data, byte type) throws IOException
+		out.write(getFramedData(data, type));
+		increaseSequenceNumber();
+		Frame m = new Frame(iSendSeq, data, type);
+		sendQueue.add(m);
+
+		//System.out.println(BytePrinter.printBytes(getFramedData(data, type)));
+	}*/
+	
+	public void sendReliable(byte[] data, byte type) throws IOException
 	{
 		//byte[] bytes = getFramedData(data, type);
 		//System.out.println(Integer.toString(bytes.length));
 		
-		out.write(getFramedData(data, type));
-		System.out.println(BytePrinter.printBytes(getFramedData(data, type)));
+		//out.write(getFramedData(data, type));
+		//System.out.println(BytePrinter.printBytes(getFramedData(data, type)));
+
+		increaseSequenceNumber();
+		Frame m = new Frame(iSendSeq, data, type);
+		sendQueue.add(m);
+		
 	}
 
 	/*
@@ -447,100 +524,7 @@ public class Framing implements Runnable {
 		System.out.println("Send CRC: " +  Short.toString(CRC) );
 	}
 	*/
-	//Public method for framing data
-	public synchronized byte[] getFramedData(byte[] data, byte type) {
-		int buf_index=0;
-		byte[] framed_data = new byte[1000];
-		
-		// Create CRC here
-		CRC createCRC = new CRC();
-		
-		//Add start flag
-		framed_data[buf_index]=m_DLE;
-		buf_index++;
-		framed_data[buf_index]=m_STX;
-		buf_index++;
-		
-		increaseSequenceNumber();
-		//iSendSeq = 0;
 
-		//System.out.println("Sequence Hi: " + BytePrinter.printByte((byte) (iSendSeq>>8)));
-		//Put in sequence number hi byte
-		framed_data[buf_index] = (byte) (iSendSeq>>8);
-		buf_index++;
-		createCRC.next_databyte((byte) (iSendSeq>>8));
-
-		//System.out.println("Sequence Lo: " + BytePrinter.printByte((byte) (iSendSeq)));
-		//Put in sequence number lo byte
-		framed_data[buf_index] = (byte) (iSendSeq);
-		buf_index++;
-		createCRC.next_databyte((byte) iSendSeq);
-
-		//System.out.println("Type: " + BytePrinter.printAscii((byte) (type)));
-		//Put in type byte
-		framed_data[buf_index] = type;
-		buf_index++;
-		createCRC.next_databyte(type);
-		
-
-		//Send data with unsigned char stuffing - Also calculate CRC (ignore stuffing)
-		for (int i=0; i<data.length; i++) {
-			if(data[i]==m_DLE) {
-			
-				//System.out.println("Packed Data: " +  BytePrinter.printByte((byte) (data[i])));
-			  
-			framed_data[buf_index]=m_DLE;
-			  buf_index++;
-			  
-			  framed_data[buf_index]=data[i];
-			  buf_index++;
-			  createCRC.next_databyte(data[i]);
-
-			}
-			else {
-				//System.out.println("Data: " +  BytePrinter.printByte((byte) (data[i])));
-			  
-				framed_data[buf_index]=data[i];
-			  buf_index++;
-			  createCRC.next_databyte(data[i]);
-
-			}
-		}
-
-		//Return CRC
-		short CRC=createCRC.returnCRC_reset();
-		
-		//System.out.println("CRC: " +  Short.toString(CRC) );
-		
-		//Send CRC with byte stuffing
-		framed_data[buf_index]=(byte)((CRC>>8)&0xff);
-		buf_index++;
-		
-		if(framed_data[buf_index-1]==m_DLE) {
-			framed_data[buf_index]=m_DLE;
-			buf_index++;
-		}
-		
-		framed_data[buf_index]=(byte)(CRC&0xff);
-		buf_index++;
-		
-		if(framed_data[buf_index-1]==m_DLE) {
-			framed_data[buf_index]=m_DLE;
-			buf_index++;
-		}
-
-		//Send end flag
-		framed_data[buf_index]=m_DLE;
-		buf_index++;
-		framed_data[buf_index]=m_ETX;
-		buf_index++;
-	
-		byte[] framedDataToSend = new byte[buf_index];
-		System.arraycopy(framed_data, 0, framedDataToSend, 0, buf_index);
-		
-		//Serial.write(framed_data, buf_index);
-		return framedDataToSend;
-	}
 
 
 	
